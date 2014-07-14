@@ -2396,9 +2396,9 @@ angular.module( 'ui.bootstrap.tooltip', [ 'ui.bootstrap.position', 'ui.bootstrap
    *     $tooltipProvider.options( { placement: 'left' } );
    *   });
    */
-	this.options = function( value ) {
-		angular.extend( globalOptions, value );
-	};
+  this.options = function( value ) {
+    angular.extend( globalOptions, value );
+  };
 
   /**
    * This allows you to extend the set of trigger mappings available. E.g.:
@@ -3480,6 +3480,13 @@ angular.module('ui.bootstrap.typeahead', ['ui.bootstrap.position', 'ui.bootstrap
 
       var appendToBody =  attrs.typeaheadAppendToBody ? originalScope.$eval(attrs.typeaheadAppendToBody) : false;
 
+      var hideOnSelect = attrs.typeaheadHideOnSelect || 'true';
+
+      //added by Anton
+      var showMoreCallback = $parse(attrs.typeaheadShowMore) || 'false';
+      
+
+
       //INTERNAL VARIABLES
 
       //model setter executed upon match selection
@@ -3493,6 +3500,10 @@ angular.module('ui.bootstrap.typeahead', ['ui.bootstrap.position', 'ui.bootstrap
       //create a child scope for the typeahead directive so we are not polluting original scope
       //with typeahead-specific data (matches, query etc.)
       var scope = originalScope.$new();
+
+      //added by Anton
+      scope.isMore = attrs.typeaheadShowMore != null ? true : false;
+
       originalScope.$on('$destroy', function(){
         scope.$destroy();
       });
@@ -3513,11 +3524,38 @@ angular.module('ui.bootstrap.typeahead', ['ui.bootstrap.position', 'ui.bootstrap
         active: 'activeIdx',
         select: 'select(activeIdx)',
         query: 'query',
-        position: 'position'
+        position: 'position',
+        showmore: 'getMoreMatches()',
+        ismore: 'isMore'
       });
       //custom item template
       if (angular.isDefined(attrs.typeaheadTemplateUrl)) {
         popUpEl.attr('template-url', attrs.typeaheadTemplateUrl);
+      }
+
+
+
+      //added by Anton GET MORE
+      scope.getMoreMatches = function() {
+        var locals = {$viewValue: element.val()};
+        $q.when(showMoreCallback(originalScope, locals)).then(function(matches) {
+          
+          if (matches && matches.length > 0) {
+            //transform labels
+            for(var i=0; i<matches.length; i++) {
+              locals[parserResult.itemName] = matches[i];
+              scope.matches.push({
+                id: getMatchId(i),
+                label: parserResult.viewMapper(scope, locals),
+                model: matches[i]
+              });
+            }
+          } else {
+            scope.isMore = false;
+          }
+
+        });
+
       }
 
       var resetMatches = function() {
@@ -3541,7 +3579,6 @@ angular.module('ui.bootstrap.typeahead', ['ui.bootstrap.position', 'ui.bootstrap
       });
 
       var getMatchesAsync = function(inputValue) {
-
         var locals = {$viewValue: inputValue};
         isLoadingSetter(originalScope, true);
         $q.when(parserResult.source(originalScope, locals)).then(function(matches) {
@@ -3551,7 +3588,6 @@ angular.module('ui.bootstrap.typeahead', ['ui.bootstrap.position', 'ui.bootstrap
           var onCurrentRequest = (inputValue === modelCtrl.$viewValue);
           if (onCurrentRequest && hasFocus) {
             if (matches.length > 0) {
-
               scope.activeIdx = 0;
               scope.matches.length = 0;
 
@@ -3593,6 +3629,25 @@ angular.module('ui.bootstrap.typeahead', ['ui.bootstrap.position', 'ui.bootstrap
 
       //Declare the timeout promise var outside the function scope so that stacked calls can be cancelled later 
       var timeoutPromise;
+
+      
+      //resetMatches call after reset $modelValue from triggers, specific checking for my project
+      if(hideOnSelect == 'false') {
+        scope.$watch(function () {
+           return modelCtrl.$modelValue;
+         },                       
+          function(newVal, oldVal) {
+            if(newVal !== undefined) {
+              if(newVal.length < minSearch)  {
+                resetMatches();
+              }
+              if(newVal.title != undefined) {
+                if(!newVal.title)
+                  resetMatches();
+              }
+            }
+        }, true);
+      }
 
       //plug into $parsers pipeline to open a typeahead on view changes initiated from DOM
       //$parsers kick-in on all the changes coming from the view as well as manually triggered by $setViewValue
@@ -3669,7 +3724,9 @@ angular.module('ui.bootstrap.typeahead', ['ui.bootstrap.position', 'ui.bootstrap
           $label: parserResult.viewMapper(originalScope, locals)
         });
 
-        resetMatches();
+        if(hideOnSelect == 'true') {
+          resetMatches();
+        }
 
         //return focus to the input element if a match was selected via a mouse click event
         // use timeout to avoid $rootScope:inprog error
@@ -3714,7 +3771,9 @@ angular.module('ui.bootstrap.typeahead', ['ui.bootstrap.position', 'ui.bootstrap
       // Keep reference to click handler to unbind it.
       var dismissClickHandler = function (evt) {
         if (element[0] !== evt.target) {
-          resetMatches();
+          if(hideOnSelect == 'true') {
+            resetMatches();
+          }
           scope.$digest();
         }
       };
@@ -3744,6 +3803,8 @@ angular.module('ui.bootstrap.typeahead', ['ui.bootstrap.position', 'ui.bootstrap
         query:'=',
         active:'=',
         position:'=',
+        showmore:'&',
+        ismore:'=',
         select:'&'
       },
       replace:true,
@@ -3767,6 +3828,10 @@ angular.module('ui.bootstrap.typeahead', ['ui.bootstrap.position', 'ui.bootstrap
         scope.selectMatch = function (activeIdx) {
           scope.select({activeIdx:activeIdx});
         };
+
+        scope.getMore = function() {
+          scope.showmore();
+        }
       }
     };
   })
@@ -3808,7 +3873,7 @@ angular.module("template/accordion/accordion-group.html", []).run(["$templateCac
     "    </h4>\n" +
     "  </div>\n" +
     "  <div class=\"panel-collapse\" collapse=\"!isOpen\">\n" +
-    "	  <div class=\"panel-body\" ng-transclude></div>\n" +
+    "   <div class=\"panel-body\" ng-transclude></div>\n" +
     "  </div>\n" +
     "</div>");
 }]);
@@ -3914,14 +3979,14 @@ angular.module("template/datepicker/month.html", []).run(["$templateCache", func
 angular.module("template/datepicker/popup.html", []).run(["$templateCache", function($templateCache) {
   $templateCache.put("template/datepicker/popup.html",
     "<ul class=\"dropdown-menu\" ng-style=\"{display: (isOpen && 'block') || 'none', top: position.top+'px', left: position.left+'px'}\" ng-keydown=\"keydown($event)\">\n" +
-    "	<li ng-transclude></li>\n" +
-    "	<li ng-if=\"showButtonBar\" style=\"padding:10px 9px 2px\">\n" +
-    "		<span class=\"btn-group\">\n" +
-    "			<button type=\"button\" class=\"btn btn-sm btn-info\" ng-click=\"select('today')\">{{ getText('current') }}</button>\n" +
-    "			<button type=\"button\" class=\"btn btn-sm btn-danger\" ng-click=\"select(null)\">{{ getText('clear') }}</button>\n" +
-    "		</span>\n" +
-    "		<button type=\"button\" class=\"btn btn-sm btn-success pull-right\" ng-click=\"close()\">{{ getText('close') }}</button>\n" +
-    "	</li>\n" +
+    " <li ng-transclude></li>\n" +
+    " <li ng-if=\"showButtonBar\" style=\"padding:10px 9px 2px\">\n" +
+    "   <span class=\"btn-group\">\n" +
+    "     <button type=\"button\" class=\"btn btn-sm btn-info\" ng-click=\"select('today')\">{{ getText('current') }}</button>\n" +
+    "     <button type=\"button\" class=\"btn btn-sm btn-danger\" ng-click=\"select(null)\">{{ getText('clear') }}</button>\n" +
+    "   </span>\n" +
+    "   <button type=\"button\" class=\"btn btn-sm btn-success pull-right\" ng-click=\"close()\">{{ getText('close') }}</button>\n" +
+    " </li>\n" +
     "</ul>\n" +
     "");
 }]);
@@ -4073,30 +4138,30 @@ angular.module("template/tabs/tabset.html", []).run(["$templateCache", function(
 angular.module("template/timepicker/timepicker.html", []).run(["$templateCache", function($templateCache) {
   $templateCache.put("template/timepicker/timepicker.html",
     "<table>\n" +
-    "	<tbody>\n" +
-    "		<tr class=\"text-center\">\n" +
-    "			<td><a ng-click=\"incrementHours()\" class=\"btn btn-link\"><span class=\"glyphicon glyphicon-chevron-up\"></span></a></td>\n" +
-    "			<td>&nbsp;</td>\n" +
-    "			<td><a ng-click=\"incrementMinutes()\" class=\"btn btn-link\"><span class=\"glyphicon glyphicon-chevron-up\"></span></a></td>\n" +
-    "			<td ng-show=\"showMeridian\"></td>\n" +
-    "		</tr>\n" +
-    "		<tr>\n" +
-    "			<td style=\"width:50px;\" class=\"form-group\" ng-class=\"{'has-error': invalidHours}\">\n" +
-    "				<input type=\"text\" ng-model=\"hours\" ng-change=\"updateHours()\" class=\"form-control text-center\" ng-mousewheel=\"incrementHours()\" ng-readonly=\"readonlyInput\" maxlength=\"2\">\n" +
-    "			</td>\n" +
-    "			<td>:</td>\n" +
-    "			<td style=\"width:50px;\" class=\"form-group\" ng-class=\"{'has-error': invalidMinutes}\">\n" +
-    "				<input type=\"text\" ng-model=\"minutes\" ng-change=\"updateMinutes()\" class=\"form-control text-center\" ng-readonly=\"readonlyInput\" maxlength=\"2\">\n" +
-    "			</td>\n" +
-    "			<td ng-show=\"showMeridian\"><button type=\"button\" class=\"btn btn-default text-center\" ng-click=\"toggleMeridian()\">{{meridian}}</button></td>\n" +
-    "		</tr>\n" +
-    "		<tr class=\"text-center\">\n" +
-    "			<td><a ng-click=\"decrementHours()\" class=\"btn btn-link\"><span class=\"glyphicon glyphicon-chevron-down\"></span></a></td>\n" +
-    "			<td>&nbsp;</td>\n" +
-    "			<td><a ng-click=\"decrementMinutes()\" class=\"btn btn-link\"><span class=\"glyphicon glyphicon-chevron-down\"></span></a></td>\n" +
-    "			<td ng-show=\"showMeridian\"></td>\n" +
-    "		</tr>\n" +
-    "	</tbody>\n" +
+    " <tbody>\n" +
+    "   <tr class=\"text-center\">\n" +
+    "     <td><a ng-click=\"incrementHours()\" class=\"btn btn-link\"><span class=\"glyphicon glyphicon-chevron-up\"></span></a></td>\n" +
+    "     <td>&nbsp;</td>\n" +
+    "     <td><a ng-click=\"incrementMinutes()\" class=\"btn btn-link\"><span class=\"glyphicon glyphicon-chevron-up\"></span></a></td>\n" +
+    "     <td ng-show=\"showMeridian\"></td>\n" +
+    "   </tr>\n" +
+    "   <tr>\n" +
+    "     <td style=\"width:50px;\" class=\"form-group\" ng-class=\"{'has-error': invalidHours}\">\n" +
+    "       <input type=\"text\" ng-model=\"hours\" ng-change=\"updateHours()\" class=\"form-control text-center\" ng-mousewheel=\"incrementHours()\" ng-readonly=\"readonlyInput\" maxlength=\"2\">\n" +
+    "     </td>\n" +
+    "     <td>:</td>\n" +
+    "     <td style=\"width:50px;\" class=\"form-group\" ng-class=\"{'has-error': invalidMinutes}\">\n" +
+    "       <input type=\"text\" ng-model=\"minutes\" ng-change=\"updateMinutes()\" class=\"form-control text-center\" ng-readonly=\"readonlyInput\" maxlength=\"2\">\n" +
+    "     </td>\n" +
+    "     <td ng-show=\"showMeridian\"><button type=\"button\" class=\"btn btn-default text-center\" ng-click=\"toggleMeridian()\">{{meridian}}</button></td>\n" +
+    "   </tr>\n" +
+    "   <tr class=\"text-center\">\n" +
+    "     <td><a ng-click=\"decrementHours()\" class=\"btn btn-link\"><span class=\"glyphicon glyphicon-chevron-down\"></span></a></td>\n" +
+    "     <td>&nbsp;</td>\n" +
+    "     <td><a ng-click=\"decrementMinutes()\" class=\"btn btn-link\"><span class=\"glyphicon glyphicon-chevron-down\"></span></a></td>\n" +
+    "     <td ng-show=\"showMeridian\"></td>\n" +
+    "   </tr>\n" +
+    " </tbody>\n" +
     "</table>\n" +
     "");
 }]);
@@ -4112,5 +4177,6 @@ angular.module("template/typeahead/typeahead-popup.html", []).run(["$templateCac
     "    <li ng-repeat=\"match in matches track by $index\" ng-class=\"{active: isActive($index) }\" ng-mouseenter=\"selectActive($index)\" ng-click=\"selectMatch($index)\" role=\"option\" id=\"{{match.id}}\">\n" +
     "        <div typeahead-match index=\"$index\" match=\"match\" query=\"query\" template-url=\"templateUrl\"></div>\n" +
     "    </li>\n" +
+    "<li ng-if=\"ismore\"><a class=\"show-more-typeahead\" ng-click=\"getMore()\">See More</a></li>" +
     "</ul>");
 }]);
