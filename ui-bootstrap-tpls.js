@@ -3770,11 +3770,18 @@ angular.module('ui.bootstrap.typeahead', ['ui.bootstrap.position', 'ui.bootstrap
 
       // Keep reference to click handler to unbind it.
       var dismissClickHandler = function (evt) {
-        if (element[0] !== evt.target) {
-          if(hideOnSelect == 'true') {
+        if(hideOnSelect == 'true') {
+          if (element[0] !== evt.target) {
             resetMatches();
+            scope.$digest();
           }
-          scope.$digest();
+        } else {
+          var openedPopup = element.next('ul.dropdown-menu');
+          var parentClickedElement = $(evt.target).closest('ul');
+          if (openedPopup[0] !== parentClickedElement[0]) {
+            resetMatches();
+            scope.$digest();
+          }
         }
       };
 
